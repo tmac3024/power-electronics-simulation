@@ -1,161 +1,324 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
 using PowerElectronicsSimulator.Models;
 
 namespace PowerElectronicsSimulator.Services
 {
     public class CircuitAnalyzer
     {
-        public Circuit Circuit { get; set; }
+        private List<Component> _components;
+        private List<Connection> _connections;
 
-        public CircuitAnalyzer(Circuit circuit)
+        public CircuitAnalyzer(List<Component> components, List<Connection> connections)
         {
-            Circuit = circuit;
+            _components = components;
+            _connections = connections;
         }
 
-        // Calculate impedance at a given frequency
-        public Complex CalculateImpedance(Component component, double frequency)
+        // Analyze circuit and calculate voltages and currents
+        public Dictionary<string, SimulationResult> AnalyzeCircuit(double inputVoltage, double frequency)
         {
-            double omega = 2 * Math.PI * frequency;
+            var results = new Dictionary<string, SimulationResult>();
 
-            switch (component.Type)
+            try
             {
-                case ComponentType.Resistor:
-                    return new Complex(component.Value, 0);
-                
-                case ComponentType.Capacitor:
-                    return new Complex(0, -1.0 / (omega * component.Value));
-                
-                case ComponentType.Inductor:
-                    return new Complex(0, omega * component.Value);
-                
-                default:
-                    return Complex.Zero;
+                // Find voltage source
+                var voltageSource = _components.OfType<VoltageSource>().FirstOrDefault();
+                if (voltageSource == null)
+                {
+                    throw new InvalidOperationException("No voltage source found in circuit");
+                }
+
+                // Build circuit matrix (simplified nodal analysis)
+                var nodes = BuildNodeList();
+                var nodeVoltages = SolveNodalAnalysis(nodes, inputVoltage);
+
+                // Calculate component-specific results
+                foreach (var component in _components)
+                {
+                    var result = CalculateComponentResult(component, nodeVoltages, frequency);
+                    results[component.Id] = result;
+                }
+
+                return results;
+            }
+            catch (Exception ex)
+            {
+                // Return error results
+                foreach (var component in _components)
+                {
+                    results[component.Id] = new SimulationResult
+                    {
+                        ComponentId = component.Id,
+                        Voltage = 0,
+                        Current = 0,
+                        Power = 0,
+                        ErrorMessage = ex.Message
+                    };
+                }
+                return results;
             }
         }
 
-        // Calculate transfer function H(s) = Vout/Vin
-        public Complex CalculateTransferFunction(double frequency)
+        // Build list of nodes in the circuit
+        private List<CircuitNode> BuildNodeList()
         {
-            // Simplified transfer function for buck converter
-            // This is a basic implementation - can be extended for more complex circuits
-            
-            var resistor = Circuit.Components.FirstOrDefault(c => c.Type == ComponentType.Resistor);
-            var capacitor = Circuit.Components.FirstOrDefault(c => c.Type == ComponentType.Capacitor);
-            var inductor = Circuit.Components.FirstOrDefault(c => c.Type == ComponentType.Inductor);
+            var nodes = new Dictionary<string, CircuitNode>();
+            int nodeCounter = 0;
 
-            if (resistor == null || capacitor == null || inductor == null)
-                return Complex.Zero;
-
-            double R = resistor.Value;
-            double L = inductor.Value;
-            double C = capacitor.Value;
-            double omega = 2 * Math.PI * frequency;
-            Complex s = new Complex(0, omega);
-
-            // Transfer function: H(s) = R / (L*C*s^2 + R*C*s + 1)
-            Complex numerator = R;
-            Complex denominator = L * C * s * s + R * C * s + 1;
-
-            return numerator / denominator;
-        }
-
-        // Calculate gain in dB
-        public double CalculateGainDB(Complex transferFunction)
-        {
-            return 20 * Math.Log10(transferFunction.Magnitude);
-        }
-
-        // Calculate phase in degrees
-        public double CalculatePhase(Complex transferFunction)
-        {
-            return transferFunction.Phase * 180 / Math.PI;
-        }
-
-        // Frequency response analysis
-        public List<(double Frequency, double GainDB, double Phase)> AnalyzeFrequencyResponse(double startFreq, double endFreq, int points)
-        {
-            var results = new List<(double, double, double)>();
-            double logStart = Math.Log10(startFreq);
-            double logEnd = Math.Log10(endFreq);
-            double step = (logEnd - logStart) / (points - 1);
-
-            for (int i = 0; i < points; i++)
+            // Create nodes from connections
+            foreach (var connection in _connections)
             {
-                double frequency = Math.Pow(10, logStart + i * step);
-                var tf = CalculateTransferFunction(frequency);
-                double gain = CalculateGainDB(tf);
-                double phase = CalculatePhase(tf);
-                results.Add((frequency, gain, phase));
+                // From node
+                if (!nodes.ContainsKey(connection.FromComponentId))
+                {
+                    nodes[connection.FromComponentId] = new CircuitNode
+                    {
+                        Id = $"Node{nodeCounter++}",
+                        ComponentIds = new List<string> { connection.FromComponentId }
+                    };
+                }
+
+                // To node
+                if (!nodes.ContainsKey(connection.ToComponentId))
+                {
+                    nodes[connection.ToComponentId] = new CircuitNode
+                    {
+                        Id = $"Node{nodeCounter++}",
+                        ComponentIds = new List<string> { connection.ToComponentId }
+                    };
+                }
             }
 
-            return results;
+            return nodes.Values.ToList();
         }
 
-        // Find crossover frequency (gain = 0 dB)
-        public double FindCrossoverFrequency(double startFreq, double endFreq)
+        // Solve nodal analysis using simplified KCL/KVL
+        private Dictionary<string, double> SolveNodalAnalysis(List<CircuitNode> nodes, double inputVoltage)
         {
-            int iterations = 100;
-            double tolerance = 0.01;
+            var voltages = new Dictionary<string, double>();
 
-            for (int i = 0; i < iterations; i++)
+            // Ground reference (node 0 = 0V)
+            voltages["Node0"] = 0;
+
+            // Apply input voltage to first node
+            if (nodes.Count > 0)
             {
-                double midFreq = (startFreq + endFreq) / 2;
-                var tf = CalculateTransferFunction(midFreq);
-                double gain = CalculateGainDB(tf);
-
-                if (Math.Abs(gain) < tolerance)
-                    return midFreq;
-
-                if (gain > 0)
-                    startFreq = midFreq;
-                else
-                    endFreq = midFreq;
+                voltages[nodes[0].Id] = inputVoltage;
             }
 
-            return (startFreq + endFreq) / 2;
-        }
-
-        // Calculate phase margin at crossover frequency
-        public double CalculatePhaseMargin(double crossoverFreq)
-        {
-            var tf = CalculateTransferFunction(crossoverFreq);
-            double phase = CalculatePhase(tf);
-            return 180 + phase; // Phase margin = 180° + phase at crossover
-        }
-
-        // Calculate gain margin
-        public double CalculateGainMargin()
-        {
-            // Find frequency where phase = -180°
-            double freq = FindPhase180Frequency(1, 1000000);
-            var tf = CalculateTransferFunction(freq);
-            return -CalculateGainDB(tf); // Gain margin = -gain at -180° phase
-        }
-
-        private double FindPhase180Frequency(double startFreq, double endFreq)
-        {
-            int iterations = 100;
-            double tolerance = 1.0;
-
-            for (int i = 0; i < iterations; i++)
+            // Calculate voltages for remaining nodes (simplified approach)
+            for (int i = 1; i < nodes.Count; i++)
             {
-                double midFreq = (startFreq + endFreq) / 2;
-                var tf = CalculateTransferFunction(midFreq);
-                double phase = CalculatePhase(tf);
-
-                if (Math.Abs(phase + 180) < tolerance)
-                    return midFreq;
-
-                if (phase > -180)
-                    startFreq = midFreq;
-                else
-                    endFreq = midFreq;
+                var node = nodes[i];
+                double voltage = CalculateNodeVoltage(node, voltages);
+                voltages[node.Id] = voltage;
             }
 
-            return (startFreq + endFreq) / 2;
+            return voltages;
         }
+
+        // Calculate voltage at a specific node
+        private double CalculateNodeVoltage(CircuitNode node, Dictionary<string, double> knownVoltages)
+        {
+            // Simplified voltage calculation based on adjacent nodes
+            double totalVoltage = 0;
+            int count = 0;
+
+            foreach (var componentId in node.ComponentIds)
+            {
+                var component = _components.FirstOrDefault(c => c.Id == componentId);
+                if (component != null)
+                {
+                    // Get connected nodes
+                    var connections = _connections.Where(c => 
+                        c.FromComponentId == componentId || c.ToComponentId == componentId).ToList();
+
+                    foreach (var conn in connections)
+                    {
+                        string adjacentNodeId = conn.FromComponentId == componentId ? 
+                            $"Node{_components.FindIndex(c => c.Id == conn.ToComponentId)}" :
+                            $"Node{_components.FindIndex(c => c.Id == conn.FromComponentId)}";
+
+                        if (knownVoltages.ContainsKey(adjacentNodeId))
+                        {
+                            totalVoltage += knownVoltages[adjacentNodeId];
+                            count++;
+                        }
+                    }
+                }
+            }
+
+            return count > 0 ? totalVoltage / count : 0;
+        }
+
+        // Calculate results for a specific component
+        private SimulationResult CalculateComponentResult(Component component, 
+            Dictionary<string, double> nodeVoltages, double frequency)
+        {
+            var result = new SimulationResult
+            {
+                ComponentId = component.Id,
+                ComponentName = component.Name
+            };
+
+            try
+            {
+                // Get node voltages for this component
+                var nodeId = $"Node{_components.IndexOf(component)}";
+                double voltage = nodeVoltages.ContainsKey(nodeId) ? nodeVoltages[nodeId] : 0;
+
+                // Calculate based on component type
+                if (component is Resistor resistor)
+                {
+                    result.Voltage = voltage;
+                    result.Current = voltage / resistor.Value; // I = V/R
+                    result.Power = voltage * result.Current; // P = V*I
+                }
+                else if (component is Capacitor capacitor)
+                {
+                    result.Voltage = voltage;
+                    // Capacitive reactance: Xc = 1/(2*pi*f*C)
+                    double capacitance = capacitor.Value * 1e-6; // Convert µF to F
+                    double reactance = 1.0 / (2 * Math.PI * frequency * capacitance);
+                    result.Current = voltage / reactance;
+                    result.Power = 0; // Ideal capacitor doesn't dissipate power
+                    result.Reactance = reactance;
+                }
+                else if (component is Inductor inductor)
+                {
+                    result.Voltage = voltage;
+                    // Inductive reactance: XL = 2*pi*f*L
+                    double inductance = inductor.Value * 1e-3; // Convert mH to H
+                    double reactance = 2 * Math.PI * frequency * inductance;
+                    result.Current = voltage / reactance;
+                    result.Power = 0; // Ideal inductor doesn't dissipate power
+                    result.Reactance = reactance;
+                }
+                else if (component is Diode diode)
+                {
+                    result.Voltage = voltage;
+                    // Simplified diode model
+                    if (voltage > diode.ForwardVoltage)
+                    {
+                        result.Current = (voltage - diode.ForwardVoltage) / 10; // Assume 10Ω forward resistance
+                        result.Power = voltage * result.Current;
+                    }
+                    else
+                    {
+                        result.Current = 0;
+                        result.Power = 0;
+                    }
+                }
+                else if (component is Transistor transistor)
+                {
+                    result.Voltage = voltage;
+                    // Simplified transistor model (assumed ON state)
+                    double onResistance = transistor.OnResistance * 1e-3; // Convert mΩ to Ω
+                    result.Current = voltage / onResistance;
+                    result.Power = voltage * result.Current;
+                }
+                else if (component is Load load)
+                {
+                    result.Voltage = voltage;
+                    result.Current = voltage / load.Value; // I = V/R
+                    result.Power = voltage * result.Current; // P = V*I
+                }
+                else if (component is VoltageSource voltageSource)
+                {
+                    result.Voltage = voltageSource.Value;
+                    result.Current = CalculateSourceCurrent(voltageSource);
+                    result.Power = result.Voltage * result.Current;
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                result.ErrorMessage = $"Error calculating results: {ex.Message}";
+                return result;
+            }
+        }
+
+        // Calculate total current drawn from voltage source
+        private double CalculateSourceCurrent(VoltageSource source)
+        {
+            double totalCurrent = 0;
+
+            // Sum currents from all components connected to source
+            var connectedComponents = _connections
+                .Where(c => c.FromComponentId == source.Id || c.ToComponentId == source.Id)
+                .Select(c => c.FromComponentId == source.Id ? c.ToComponentId : c.FromComponentId)
+                .Distinct();
+
+            foreach (var componentId in connectedComponents)
+            {
+                var component = _components.FirstOrDefault(c => c.Id == componentId);
+                if (component is Resistor resistor)
+                {
+                    totalCurrent += source.Value / resistor.Value;
+                }
+                else if (component is Load load)
+                {
+                    totalCurrent += source.Value / load.Value;
+                }
+            }
+
+            return totalCurrent;
+        }
+
+        // Calculate transfer function for the circuit
+        public TransferFunction CalculateTransferFunction()
+        {
+            var tf = new TransferFunction();
+
+            // Find key components
+            var inductors = _components.OfType<Inductor>().ToList();
+            var capacitors = _components.OfType<Capacitor>().ToList();
+            var resistors = _components.OfType<Resistor>().ToList();
+
+            if (inductors.Any() && capacitors.Any())
+            {
+                // LC circuit - second order
+                var L = inductors.First().Value * 1e-3; // mH to H
+                var C = capacitors.First().Value * 1e-6; // µF to F
+                var R = resistors.Any() ? resistors.First().Value : 1.0;
+
+                tf.NaturalFrequency = 1.0 / Math.Sqrt(L * C);
+                tf.DampingRatio = (R / 2.0) * Math.Sqrt(C / L);
+                tf.QFactor = 1.0 / (2.0 * tf.DampingRatio);
+            }
+
+            return tf;
+        }
+    }
+
+    // Circuit node class
+    public class CircuitNode
+    {
+        public string Id { get; set; }
+        public List<string> ComponentIds { get; set; }
+        public double Voltage { get; set; }
+    }
+
+    // Simulation result class
+    public class SimulationResult
+    {
+        public string ComponentId { get; set; }
+        public string ComponentName { get; set; }
+        public double Voltage { get; set; }
+        public double Current { get; set; }
+        public double Power { get; set; }
+        public double Reactance { get; set; }
+        public string ErrorMessage { get; set; }
+    }
+
+    // Transfer function class
+    public class TransferFunction
+    {
+        public double NaturalFrequency { get; set; }
+        public double DampingRatio { get; set; }
+        public double QFactor { get; set; }
     }
 }
