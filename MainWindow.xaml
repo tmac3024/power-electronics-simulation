@@ -1,0 +1,109 @@
+<Window x:Class="PowerElectronicsSimulator.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Power Electronics Simulator" Height="800" Width="1200"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Menu Bar -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="File">
+                <MenuItem Header="New Circuit" Click="NewCircuit_Click"/>
+                <MenuItem Header="Save Circuit" Click="SaveCircuit_Click"/>
+                <MenuItem Header="Load Circuit" Click="LoadCircuit_Click"/>
+                <Separator/>
+                <MenuItem Header="Exit" Click="Exit_Click"/>
+            </MenuItem>
+            <MenuItem Header="Simulate">
+                <MenuItem Header="Run Analysis" Click="RunAnalysis_Click"/>
+                <MenuItem Header="Design Compensator" Click="DesignCompensator_Click"/>
+            </MenuItem>
+            <MenuItem Header="Help">
+                <MenuItem Header="About" Click="About_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Component Panel -->
+            <GroupBox Grid.Column="0" Header="Components" Margin="5">
+                <StackPanel>
+                    <TextBlock Text="Add Components:" FontWeight="Bold" Margin="5"/>
+                    
+                    <GroupBox Header="Passive Components" Margin="5">
+                        <StackPanel>
+                            <Button Content="Resistor" Margin="5" Click="AddResistor_Click"/>
+                            <Button Content="Capacitor" Margin="5" Click="AddCapacitor_Click"/>
+                            <Button Content="Inductor" Margin="5" Click="AddInductor_Click"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Active Components" Margin="5">
+                        <StackPanel>
+                            <Button Content="Voltage Source" Margin="5" Click="AddVoltageSource_Click"/>
+                            <Button Content="MOSFET" Margin="5" Click="AddMOSFET_Click"/>
+                            <Button Content="Diode" Margin="5" Click="AddDiode_Click"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Circuit Properties" Margin="5">
+                        <StackPanel>
+                            <TextBlock Text="Frequency (Hz):" Margin="5,5,5,0"/>
+                            <TextBox x:Name="FrequencyTextBox" Text="100000" Margin="5,0,5,5"/>
+                            <Button Content="Update Frequency" Click="UpdateFrequency_Click" Margin="5"/>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Analysis" Margin="5">
+                        <StackPanel>
+                            <Button Content="Frequency Response" Click="FrequencyResponse_Click" Margin="5"/>
+                            <Button Content="Calculate Margins" Click="CalculateMargins_Click" Margin="5"/>
+                        </StackPanel>
+                    </GroupBox>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Canvas and Results Area -->
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="2*"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Circuit Canvas -->
+                <GroupBox Grid.Row="0" Header="Circuit Diagram" Margin="5">
+                    <Canvas x:Name="CircuitCanvas" Background="White"
+                            MouseLeftButtonDown="Canvas_MouseLeftButtonDown"/>
+                </GroupBox>
+
+                <!-- Results Area -->
+                <GroupBox Grid.Row="1" Header="Results" Margin="5">
+                    <ScrollViewer>
+                        <TextBox x:Name="ResultsTextBox" 
+                                 IsReadOnly="True" 
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"/>
+                    </ScrollViewer>
+                </GroupBox>
+            </Grid>
+        </Grid>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="2">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusTextBlock" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window>
