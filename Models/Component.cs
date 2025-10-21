@@ -1,81 +1,313 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace PowerElectronicsSimulator.Models
 {
-    public enum ComponentType
+    // Base class for all circuit components
+    public abstract class Component : INotifyPropertyChanged
     {
-        Resistor,
-        Capacitor,
-        Inductor,
-        VoltageSource,
-        CurrentSource,
-        Diode,
-        MOSFET,
-        BJT,
-        OpAmp
-    }
+        private string _id;
+        private string _name;
+        private double _value;
+        private string _unit;
+        private double _x;
+        private double _y;
+        private double _width = 80;
+        private double _height = 40;
 
-    public class Component
-    {
-        public string Name { get; set; }
-        public ComponentType Type { get; set; }
-        public double Value { get; set; }
-        public string Unit { get; set; }
-        public int Node1 { get; set; }
-        public int Node2 { get; set; }
-        public int Node3 { get; set; } // For 3-terminal devices
-
-        public Component(string name, ComponentType type, double value, string unit)
+        public string Id
         {
-            Name = name;
-            Type = type;
-            Value = value;
-            Unit = unit;
+            get => _id;
+            set { _id = value; OnPropertyChanged(); }
         }
 
-        public override string ToString()
+        public string Name
         {
-            return $"{Name}: {Value}{Unit}";
+            get => _name;
+            set { _name = value; OnPropertyChanged(); }
+        }
+
+        public double Value
+        {
+            get => _value;
+            set { _value = value; OnPropertyChanged(); }
+        }
+
+        public string Unit
+        {
+            get => _unit;
+            set { _unit = value; OnPropertyChanged(); }
+        }
+
+        public double X
+        {
+            get => _x;
+            set { _x = value; OnPropertyChanged(); }
+        }
+
+        public double Y
+        {
+            get => _y;
+            set { _y = value; OnPropertyChanged(); }
+        }
+
+        public double Width
+        {
+            get => _width;
+            set { _width = value; OnPropertyChanged(); }
+        }
+
+        public double Height
+        {
+            get => _height;
+            set { _height = value; OnPropertyChanged(); }
+        }
+
+        public List<string> ConnectedTo { get; set; } = new List<string>();
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        // Abstract method to get component-specific properties for simulation
+        public abstract Dictionary<string, object> GetSimulationParameters();
+    }
+
+    // Resistor component
+    public class Resistor : Component
+    {
+        public Resistor()
+        {
+            Name = "Resistor";
+            Unit = "Ω";
+            Value = 1000; // Default 1kΩ
+        }
+
+        public override Dictionary<string, object> GetSimulationParameters()
+        {
+            return new Dictionary<string, object>
+            {
+                { "type", "resistor" },
+                { "resistance", Value }
+            };
         }
     }
 
-    public class Circuit
+    // Capacitor component
+    public class Capacitor : Component
     {
-        public List<Component> Components { get; set; } = new List<Component>();
-        public List<Connection> Connections { get; set; } = new List<Connection>();
-        public double Frequency { get; set; } = 100000; // Default 100kHz
-
-        public void AddComponent(Component component)
+        public Capacitor()
         {
-            Components.Add(component);
+            Name = "Capacitor";
+            Unit = "µF";
+            Value = 100; // Default 100µF
         }
 
-        public void AddConnection(int node1, int node2, Component component)
+        public override Dictionary<string, object> GetSimulationParameters()
         {
-            Connections.Add(new Connection { Node1 = node1, Node2 = node2, Component = component });
+            return new Dictionary<string, object>
+            {
+                { "type", "capacitor" },
+                { "capacitance", Value * 1e-6 } // Convert µF to F
+            };
         }
     }
 
-    public class Connection
+    // Inductor component
+    public class Inductor : Component
     {
-        public int Node1 { get; set; }
-        public int Node2 { get; set; }
-        public Component Component { get; set; }
+        public Inductor()
+        {
+            Name = "Inductor";
+            Unit = "mH";
+            Value = 10; // Default 10mH
+        }
+
+        public override Dictionary<string, object> GetSimulationParameters()
+        {
+            return new Dictionary<string, object>
+            {
+                { "type", "inductor" },
+                { "inductance", Value * 1e-3 } // Convert mH to H
+            };
+        }
     }
 
-    public class OperatingPoint
+    // Diode component
+    public class Diode : Component
     {
-        public Dictionary<int, double> NodeVoltages { get; set; } = new Dictionary<int, double>();
-        public Dictionary<string, double> ComponentCurrents { get; set; } = new Dictionary<string, double>();
+        private double _forwardVoltage;
+
+        public double ForwardVoltage
+        {
+            get => _forwardVoltage;
+            set { _forwardVoltage = value; OnPropertyChanged(); }
+        }
+
+        public Diode()
+        {
+            Name = "Diode";
+            Unit = "V";
+            ForwardVoltage = 0.7; // Default forward voltage drop
+        }
+
+        public override Dictionary<string, object> GetSimulationParameters()
+        {
+            return new Dictionary<string, object>
+            {
+                { "type", "diode" },
+                { "forward_voltage", ForwardVoltage }
+            };
+        }
     }
 
-    public class Wire
+    // Transistor (MOSFET/IGBT) component
+    public class Transistor : Component
     {
-        public int StartNode { get; set; }
-        public int EndNode { get; set; }
-        public System.Windows.Point StartPoint { get; set; }
-        public System.Windows.Point EndPoint { get; set; }
+        private double _onResistance;
+        private double _gateThreshold;
+
+        public double OnResistance
+        {
+            get => _onResistance;
+            set { _onResistance = value; OnPropertyChanged(); }
+        }
+
+        public double GateThreshold
+        {
+            get => _gateThreshold;
+            set { _gateThreshold = value; OnPropertyChanged(); }
+        }
+
+        public Transistor()
+        {
+            Name = "Transistor";
+            Unit = "mΩ";
+            OnResistance = 10; // Default 10mΩ on-resistance
+            GateThreshold = 2.5; // Default gate threshold voltage
+        }
+
+        public override Dictionary<string, object> GetSimulationParameters()
+        {
+            return new Dictionary<string, object>
+            {
+                { "type", "transistor" },
+                { "on_resistance", OnResistance * 1e-3 },
+                { "gate_threshold", GateThreshold }
+            };
+        }
+    }
+
+    // Voltage Source component
+    public class VoltageSource : Component
+    {
+        public VoltageSource()
+        {
+            Name = "Voltage Source";
+            Unit = "V";
+            Value = 12; // Default 12V
+        }
+
+        public override Dictionary<string, object> GetSimulationParameters()
+        {
+            return new Dictionary<string, object>
+            {
+                { "type", "voltage_source" },
+                { "voltage", Value }
+            };
+        }
+    }
+
+    // Load component
+    public class Load : Component
+    {
+        private double _power;
+
+        public double Power
+        {
+            get => _power;
+            set { _power = value; OnPropertyChanged(); }
+        }
+
+        public Load()
+        {
+            Name = "Load";
+            Unit = "Ω";
+            Value = 50; // Default 50Ω load resistance
+            Power = 0;
+        }
+
+        public override Dictionary<string, object> GetSimulationParameters()
+        {
+            return new Dictionary<string, object>
+            {
+                { "type", "load" },
+                { "resistance", Value },
+                { "power", Power }
+            };
+        }
+    }
+
+    // Connection/Wire class
+    public class Connection : INotifyPropertyChanged
+    {
+        private string _id;
+        private string _fromComponentId;
+        private string _toComponentId;
+        private double _x1, _y1, _x2, _y2;
+
+        public string Id
+        {
+            get => _id;
+            set { _id = value; OnPropertyChanged(); }
+        }
+
+        public string FromComponentId
+        {
+            get => _fromComponentId;
+            set { _fromComponentId = value; OnPropertyChanged(); }
+        }
+
+        public string ToComponentId
+        {
+            get => _toComponentId;
+            set { _toComponentId = value; OnPropertyChanged(); }
+        }
+
+        public double X1
+        {
+            get => _x1;
+            set { _x1 = value; OnPropertyChanged(); }
+        }
+
+        public double Y1
+        {
+            get => _y1;
+            set { _y1 = value; OnPropertyChanged(); }
+        }
+
+        public double X2
+        {
+            get => _x2;
+            set { _x2 = value; OnPropertyChanged(); }
+        }
+
+        public double Y2
+        {
+            get => _y2;
+            set { _y2 = value; OnPropertyChanged(); }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }
